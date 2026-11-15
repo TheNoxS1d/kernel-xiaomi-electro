@@ -73,11 +73,6 @@ static void tcf_set_action_cookie(struct tc_cookie __rcu **old_cookie,
 		call_rcu(&old->rcu, tcf_free_cookie_rcu);
 }
 
-/* XXX: For standalone actions, we don't need a RCU grace period either, because
- * actions are always connected to filters and filters are already destroyed in
- * RCU callbacks, so after a RCU grace period actions are already disconnected
- * from filters. Readers later can not find us.
- */
 static void free_tcf(struct tc_action *p)
 {
 	free_percpu(p->cpu_bstats);
@@ -87,7 +82,7 @@ static void free_tcf(struct tc_action *p)
 	if (p->goto_chain)
 		tcf_action_goto_chain_fini(p);
 
-	kfree(p);
+	kfree_rcu(p, tcfa_rcu);
 }
 
 static void tcf_action_cleanup(struct tc_action *p)
@@ -165,6 +160,10 @@ static size_t tcf_action_shared_attrs_size(const struct tc_action *act)
 		+ nla_total_size(0) /* TCA_ACT_STATS nested */
 		/* TCA_STATS_BASIC */
 		+ nla_total_size_64bit(sizeof(struct gnet_stats_basic))
+		/* TCA_STATS_RATE_EST, emitted when an estimator is attached */
+		+ nla_total_size_64bit(sizeof(struct gnet_stats_rate_est))
+		/* TCA_STATS_RATE_EST64, emitted together with the above if needed */
+		+ nla_total_size_64bit(sizeof(struct gnet_stats_rate_est64))
 		/* TCA_STATS_QUEUE */
 		+ nla_total_size_64bit(sizeof(struct gnet_stats_queue))
 		+ nla_total_size(0) /* TCA_OPTIONS nested */
@@ -328,7 +327,7 @@ static int tcf_idr_delete_index(struct tcf_idrinfo *idrinfo, u32 index)
 
 	spin_lock(&idrinfo->lock);
 	p = idr_find(&idrinfo->action_idr, index);
-	if (!p) {
+	if (IS_ERR_OR_NULL(p)) {
 		spin_unlock(&idrinfo->lock);
 		return -ENOENT;
 	}

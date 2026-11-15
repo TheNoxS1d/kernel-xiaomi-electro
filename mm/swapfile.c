@@ -3183,11 +3183,22 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 	if (unlikely(error))
 		goto bad_swap;
 
+<<<<<<< HEAD
 	inode_lock(inode);
 	if (IS_SWAPFILE(inode)) {
 		error = -EBUSY;
 		goto bad_swap_unlock_inode;
 	}
+=======
+	if (IS_ENCRYPTED(inode)) {
+		pr_warn_once(
+			"Filesystem-level encrypted swapfile '%s' is unsupported. Create a loop device over it, or use dm-crypt\n",
+			name->name);
+		error = -EINVAL;
+		goto bad_swap;
+	}
+
+>>>>>>> 1bb512106982a56a0eb71afb604bb3afa03d1d46
 	/*
 	 * Read the swap header.
 	 */

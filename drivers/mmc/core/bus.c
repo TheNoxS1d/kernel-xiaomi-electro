@@ -419,10 +419,13 @@ void mmc_remove_card(struct mmc_card *card)
 				mmc_hostname(card->host), card->rca);
 		}
 		device_del(&card->dev);
-		of_node_put(card->dev.of_node);
 	}
+<<<<<<< HEAD
 	if (host->ops->exit_dbg_mode)
 		host->ops->exit_dbg_mode(host);
+=======
+	of_node_put(card->dev.of_node);
+>>>>>>> 1bb512106982a56a0eb71afb604bb3afa03d1d46
 
 	if (host->cqe_enabled) {
 		host->cqe_ops->cqe_disable(host);

@@ -60,12 +60,15 @@ void nf_queue_entry_release_refs(struct nf_queue_entry *entry)
 	struct nf_hook_state *state = &entry->state;
 
 	/* Release those devices we held, or Alexey will kill me. */
+	if (entry->skb_dev)
+		dev_put(entry->skb_dev);
 	if (state->in)
 		dev_put(state->in);
 	if (state->out)
 		dev_put(state->out);
 	if (state->sk)
 		nf_queue_sock_put(state->sk);
+	dev_put(entry->bridge_dev);
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	if (entry->skb->nf_bridge) {
 		struct net_device *physdev;
@@ -81,6 +84,27 @@ void nf_queue_entry_release_refs(struct nf_queue_entry *entry)
 }
 EXPORT_SYMBOL_GPL(nf_queue_entry_release_refs);
 
+static void __nf_queue_entry_init_bridge_dev(struct nf_queue_entry *entry)
+{
+#if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
+	struct dst_entry *dst = skb_dst(entry->skb);
+	struct net_device *dev = NULL;
+
+	if (entry->state.pf == NFPROTO_BRIDGE &&
+	    dst && (dst->flags & DST_FAKE_RTABLE)) {
+		WARN_ON_ONCE(!rcu_read_lock_held());
+		dev = READ_ONCE(dst->dev);
+	}
+
+	/* Must hold a reference on the bridge device: skb_dst_force()
+	 * protects the dst itself, but the br_netfilter fake rtable is
+	 * embedded in bridge-private storage that netdevice teardown can
+	 * free independently.
+	 */
+	entry->bridge_dev = dev;
+#endif
+}
+
 /* Bump dev refs so they don't vanish while packet is out */
 bool nf_queue_entry_get_refs(struct nf_queue_entry *entry)
 {
@@ -89,10 +113,13 @@ bool nf_queue_entry_get_refs(struct nf_queue_entry *entry)
 	if (state->sk && !refcount_inc_not_zero(&state->sk->sk_refcnt))
 		return false;
 
+	if (entry->skb_dev)
+		dev_hold(entry->skb_dev);
 	if (state->in)
 		dev_hold(state->in);
 	if (state->out)
 		dev_hold(state->out);
+	dev_hold(entry->bridge_dev);
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	if (entry->skb->nf_bridge) {
 		struct net_device *physdev;
@@ -192,10 +219,12 @@ static int __nf_queue(struct sk_buff *skb, const struct nf_hook_state *state,
 
 	*entry = (struct nf_queue_entry) {
 		.skb	= skb,
+		.skb_dev = skb->dev,
 		.state	= *state,
 		.hook_index = index,
 		.size	= sizeof(*entry) + route_key_size,
 	};
+	__nf_queue_entry_init_bridge_dev(entry);
 
 	if (!nf_queue_entry_get_refs(entry)) {
 		kfree(entry);

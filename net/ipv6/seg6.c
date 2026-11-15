@@ -35,6 +35,9 @@ bool seg6_validate_srh(struct ipv6_sr_hdr *srh, int len)
 	int trailing;
 	unsigned int tlv_offset;
 
+	if (len < sizeof(*srh))
+		return false;
+
 	if (srh->type != IPV6_SRCRT_TYPE_4)
 		return false;
 
@@ -181,6 +184,9 @@ static int seg6_genl_set_tunsrc(struct sk_buff *skb, struct genl_info *info)
 	sdata = seg6_pernet(net);
 
 	if (!info->attrs[SEG6_ATTR_DST])
+		return -EINVAL;
+
+	if (nla_len(info->attrs[SEG6_ATTR_DST]) != sizeof(struct in6_addr))
 		return -EINVAL;
 
 	val = nla_data(info->attrs[SEG6_ATTR_DST]);

@@ -183,6 +183,8 @@ static bool ip6_parse_tlv(const struct tlvtype_proc *procs,
 					   func(). */
 					if (curr->func(skb, off) == false)
 						return false;
+
+					nh = skb_network_header(skb);
 					break;
 				}
 			}
@@ -440,7 +442,7 @@ looped_back:
 	hdr->segments_left--;
 	addr = hdr->segments + hdr->segments_left;
 
-	skb_push(skb, sizeof(struct ipv6hdr));
+	skb_push(skb, -skb_network_offset(skb));
 
 	if (skb->ip_summed == CHECKSUM_COMPLETE)
 		seg6_update_csum(skb);
@@ -466,7 +468,7 @@ looped_back:
 		}
 		ipv6_hdr(skb)->hop_limit--;
 
-		skb_pull(skb, sizeof(struct ipv6hdr));
+		skb_pull(skb, skb_transport_offset(skb));
 		goto looped_back;
 	}
 
